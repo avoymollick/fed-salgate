@@ -1,0 +1,11 @@
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+_stripped_*
+_part3_*
+*.pth
+*.zip
+/data/
+/kaggle/
+.env
+kaggle.json
