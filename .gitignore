@@ -9,3 +9,5 @@ _part3_*
 /kaggle/
 .env
 kaggle.json
+.venv/
+part2/part2_run.py
