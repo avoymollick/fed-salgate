@@ -32,11 +32,11 @@ Each Part 3 model notebook is designed to run standalone and emit `result_<model
 - **290-image binary water set** (Kaggle: `faizalkarim/flood-area-segmentation`) — merged in as `water=class 5, everything else=ignore(255)` to sharpen the Water class.
 - **Held-out GT protocol**: 15% of real labeled photos (59 of 398) are carved out once in Part 1 and never touched by self-training or FL client partitions. All final evaluation numbers use this held-out set — this is the "honest evaluation" guarantee referenced throughout.
 
-## Key config (from Part 1's `config.json`, as originally run on Kaggle)
+## Key config
 
-`IMG_SIZE=512, BATCH_SIZE=4, NUM_CLIENTS=3, NUM_ROUNDS=50, LOCAL_EPOCHS=3, DIRICHLET_ALPHA=1.5, LR=1e-4, PROXIMAL_MU=0.01, SALIENCY_LAMBDA=0.1`. Client split: 852/333/201 samples (mild non-IID — all 3 Grass-dominant).
+`IMG_SIZE=512, BATCH_SIZE=4, NUM_CLIENTS=3, NUM_ROUNDS=50, LOCAL_EPOCHS=3, DIRICHLET_ALPHA=1.5, LR=1e-4, PROXIMAL_MU=0.01, SALIENCY_LAMBDA=0.1`.
 
-**As of 2026-08-09, re-running on RunPod with**: `SELFTRAIN_EPOCHS=100` (was 40) + early stopping (patience=15 on held-out val mIoU). `NUM_CLIENTS`/`DIRICHLET_ALPHA` deliberately **unchanged** — user explicitly decided to keep Navin's original non-IID split and dataset merge for this round; only revisit those if Part 2 results indicate it's needed (see PROGRESS.md "Open decisions").
+**Current (2026-08-09, RunPod rerun — this is the live checkpoint everything downstream should use)**: `SELFTRAIN_EPOCHS=100` (was 40) + early stopping (patience=15 on held-out val mIoU), never triggered — ran the full 100 epochs. **Held-out val mIoU: 0.4117** (vs original 0.382). Client split: **728/347/311** (all 3 still Grass-dominant, 47.6–59.9%) — shifted from the original run's 852/333/201 because the better model produces different pseudo-labels feeding the partition; same seed/α, not a bug. `NUM_CLIENTS`/`DIRICHLET_ALPHA` deliberately **unchanged** from Navin's original — only revisit if Part 2 results indicate it's needed (see PROGRESS.md "Open decisions"). Archived to HF: `avoymollick/fedsalgate-artifacts/part1_100epoch`.
 
 ## Environment
 
