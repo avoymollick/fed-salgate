@@ -132,11 +132,23 @@ Built as a **standalone, focused script** (`/workspace/water290_binary.py`, not 
 
 **Clean, decisive domain-gap finding**: the model learns water290 itself very well (81% IoU) but that skill barely transfers to FloodNet's real aerial-drone photos (23% IoU). water290 and FloodNet are visually different enough (likely camera angle/altitude/style) that water290 alone is not a substitute for real FloodNet-domain water supervision. This does **not** prove the merge (water290 + FloodNet GT together, as the main pipeline does) is harmful — only that water290 in isolation isn't sufficient. Archived to HF: `avoymollick/fedsalgate-artifacts/water290_binary_ablation`. Plot downloaded to `a:/thesis/data/water290_binary_plots/`.
 
+## 2026-08-10 — User directive: "I need the best paper results" — back to non-IID severity
+
+Neither water290 ablation explained Fed-SalGate's Part 2 loss (both point at a real but separate domain-gap finding, not a bug in the main pipeline). User's call: stop investigating side hypotheses and pursue the highest-leverage fix directly — **re-run Part 2 under real non-IID stress**, since the gate-uniformity diagnosis (2026-08-09 entry) is still the most direct explanation and the gating mechanism has never actually been tested under conditions harsh enough to activate it.
+
+**Key efficiency win**: the expensive part (100-epoch self-training, already validated at mIoU 0.4117) doesn't need to be redone — client partitioning is a separate, cheap, CPU-only step that happens *after* self-training and only depends on the already-relabeled masks on disk. Wrote a standalone repartition script (`/workspace/repartition_5c_a03.py`) that:
+- Reuses the exact `FloodNetDataset` and `NonIIDPartitioner` classes copied verbatim from Part 1 (to keep sample ordering/indexing identical)
+- Reuses the existing relabeled masks and the *same* 59 held-out GT indices (unchanged, for comparability)
+- Re-partitions with **`NUM_CLIENTS=5, DIRICHLET_ALPHA=0.3`** (up from 3/1.5) — meaningfully harsher non-IID
+- Backs up the old 3-client/α=1.5 `client_indices.pkl`/`config.json` (suffix `.3clients_a1.5.bak`) before overwriting in place — Part 2's actual completed results are saved separately (`part2_v2_summary.json`) and untouched by this either way
+
+In progress: dominant-class scan over 1445 samples, ~2.3 it/s, no errors.
+
 ---
 
 ## Open decisions / next up
 
-- **Possible 3rd ablation for a complete picture**: FloodNet-GT-only self-training (no water290 at all) — would let us build a full 3-way comparison (FloodNet-only vs. water290-only vs. merged) to isolate water290's *marginal* contribution when combined with real data, rather than just its standalone performance. Not yet run — worth considering before concluding on the water290 question.
-- **Non-IID severity (5 clients/α=0.3)**: still the other live hypothesis for why Fed-SalGate didn't beat FedAvg in the Part 2 run — deferred behind the binary-masking investigation per user's explicit call, not abandoned.
-- **Part 3 + ablations**: on hold until the above are resolved.
-- **Backport pod-only fixes to the git repo**: the GIF-file fix and the mask-gen skip guard (Part 1) were applied directly on the pod's converted `.py` script, not to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting into the notebook so the committed version matches what actually worked. Same applies to any further Part 1 changes made along the way.
+- **5-client/α=0.3 Part 2 rerun**: this is now the main line — once repartitioning finishes, run Part 2 fresh (all 5 experiments, ~5 hours) on the new split. If gates actually move and Fed-SalGate pulls ahead, that's the headline result.
+- **Possible 3rd water290 ablation** (FloodNet-GT-only, no water290, for a complete 3-way comparison table): parked, not blocking the non-IID line.
+- **Part 3 + ablations**: on hold until the non-IID rerun result is in.
+- **Backport pod-only fixes to the git repo**: the GIF-file fix, mask-gen skip guard, and now the repartitioning script were all applied/run directly on the pod, not committed to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting so the committed version matches what actually worked.
