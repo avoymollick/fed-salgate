@@ -54,12 +54,26 @@ Verified with an actual end-to-end local run (not just syntax-checked):
 
 **Bug found during this verification run**: the "package outputs" zip step zips its own working directory into itself, so reruns compound — this run's zip alone grew to **166GB** and filled the 300GB drive to 0 bytes free before erroring (`OSError: No space left on device`) mid-archive. Training itself completed fine; only the zip step failed. Fixed across all 9 notebooks (model notebooks + merge notebook) by deleting old zips before creating the new one. Deleted the corrupted 166GB file, recovered disk space. Committed and pushed both fixes together.
 
+Also created `CLAUDE.md` and `PROGRESS.md` (this file) to track project context and run history going forward.
+
+## 2026-08-09 — RunPod deployed, pod bootstrapped, Part 1 re-run launched
+
+User gave full delegated access: RunPod API key (deploy pods directly, not just SSH in after manual creation) and a HuggingFace write token.
+
+- **RunPod pod deployed via API** (`runpod` Python SDK, not the web UI): RTX 4090, 24GB VRAM. Community Cloud had no stock available at request time, fell back to **Secure Cloud ($0.74/hr** vs $0.34/hr Community — still within the $20 budget, matches the earlier "worst case" estimate). First deploy attempt didn't inject the SSH key correctly (`PUBLIC_KEY=null` in pod env, connection refused) — terminated that pod (0 uptime, no cost) and redeployed passing the key explicitly via `env={"PUBLIC_KEY": ...}`. SSH confirmed working: `ssh runpod` alias configured locally.
+- **Pod bootstrapped**: cloned the GitHub repo (copied the dedicated `github_fedsalgate` deploy key to the pod — it's a purpose-built key for this repo, not the user's main credentials), copied `kaggle.json` over, installed torch (2.4.1+cu124, already present in the RunPod PyTorch image) + segmentation-models-pytorch/albumentations/etc.
+- **Datasets pulled directly on the pod** (not through the laptop): FloodNet at 245-320MB/s (vs ~4-8MB/s on the home laptop connection — finished in under 2 minutes) and water290. All counts verified exactly matching Kaggle: 51/347/1047/450/448 FloodNet, 290 water290.
+- **HuggingFace**: created private dataset repo `avoymollick/fedsalgate-artifacts` for archiving generated results/checkpoints (backup + easy sharing with groupmates, independent of pod lifecycle). Clarified with user: HF is an **export destination** for what we generate, not something RunPod needs to pull from to get started — the ImageNet backbone auto-downloads from `download.pytorch.org`, and Part 1→Part 2 handoff happens locally on the same pod disk.
+- **User correction on scope**: keep Navin's original Part 1 config as-is (3 clients, α=1.5, both datasets merged as already validated) — do **not** change the non-IID split this round. Only change: epochs 40→100 with early stopping. Plan: run Part 1, then Part 2, then reassess (possibly revisit the binary-water-masking merge logic) before Part 3/ablations.
+- **Part 1 patched for RunPod** (`part1/fed-salgate-v2-part-1.py`, converted from the notebook via nbconvert directly on the pod): hardcoded `IN_KAGGLE=False` + direct `/workspace/data/...` paths (previous local-Windows path-patching lesson applied: used small anchor-based text inserts instead of matching a large multi-line block, since the pod's nbconvert output had different incidental whitespace than expected — large-block exact-match failed once, caught immediately via the assertion, no bad write). `SELFTRAIN_EPOCHS` 40→100, added early stopping (patience=15 on held-out val mIoU). `NUM_CLIENTS=3`/`DIRICHLET_ALPHA=1.5` confirmed unchanged. Syntax-validated (`ast.parse`) before writing.
+- **Part 1 launched** on the pod (`nohup ... &`, detached from the SSH session so it survives the connection drops we've been seeing — RunPod's SSH has had a couple of transient timeouts, unrelated to the training process itself, which stays alive independently). Currently in the CPU-bound heuristic pseudo-mask generation phase (~3.3s/image × 1945 images ≈ 100 min for this phase alone, before self-training starts). Background watcher set to report at mask-gen completion or any error.
+
 ---
 
-## Open decisions (not yet acted on)
+## Open decisions / next up
 
-- **Part 1 re-run**: bump `SELFTRAIN_EPOCHS` 40→100 with early stopping (patience~15 on held-out mIoU) — val mIoU hadn't plateaued at epoch 40. High leverage since Part 1's pseudo-masks feed everything downstream.
-- **Non-IID severity**: current 3-client/α=1.5 split is mild (all Grass-dominant). Considering 5 clients/α=0.3 for a more dramatic non-IID story before the real Part 2 run — would require re-running Part 1's partition cell (cheap, doesn't need re-training) and would invalidate the currently-pulled local `client_indices.pkl`.
-- **RunPod**: on hold per user request while laptop testing continues. SSH key ready, needs: pod provisioned (user's call — costs money), pubkey added, pod SSH string shared back.
-- **Budget estimate given to user**: ~$6-8 (Community Cloud RTX 4090) to ~$17 worst case (Secure Cloud, full ablations, 1.5x buffer), well under the $20 the group set aside.
-- **HuggingFace**: token not yet provided; needed for staging Part 1's large artifacts (masks/checkpoint) to RunPod without routing through the local laptop, per the 3-leg transfer plan (GitHub=code, Kaggle=source datasets, HF=derived artifacts).
+- **Non-IID severity (5 clients/α=0.3)**: explicitly deferred by user this round — revisit only if Part 2 results on the current 3-client/α=1.5 split suggest it's needed.
+- **Binary water-masking dataset**: user flagged this as a possible second iteration target ("if needed again part 1 with binary masking dataset") — meaning after seeing Part 2 results on the 100-epoch Part 1 rerun, may revisit how the water290 binary masks are merged in, then re-run Part 1 → Part 2 again before moving to Part 3.
+- **Part 2 full run**: next step once Part 1 finishes — 50 rounds, full data, on the pod.
+- **Part 3 + ablations**: after Part 2, pending the reassessment above.
+- **Archive to HF**: push Part 1's fresh outputs (masks/checkpoint/config) to `avoymollick/fedsalgate-artifacts` once training completes.

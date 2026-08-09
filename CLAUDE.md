@@ -32,18 +32,23 @@ Each Part 3 model notebook is designed to run standalone and emit `result_<model
 - **290-image binary water set** (Kaggle: `faizalkarim/flood-area-segmentation`) — merged in as `water=class 5, everything else=ignore(255)` to sharpen the Water class.
 - **Held-out GT protocol**: 15% of real labeled photos (59 of 398) are carved out once in Part 1 and never touched by self-training or FL client partitions. All final evaluation numbers use this held-out set — this is the "honest evaluation" guarantee referenced throughout.
 
-## Key config (from Part 1's `config.json`, as actually run on Kaggle)
+## Key config (from Part 1's `config.json`, as originally run on Kaggle)
 
-`IMG_SIZE=512, BATCH_SIZE=4, NUM_CLIENTS=3, NUM_ROUNDS=50, LOCAL_EPOCHS=3, DIRICHLET_ALPHA=1.5, LR=1e-4, PROXIMAL_MU=0.01, SALIENCY_LAMBDA=0.1, SELFTRAIN_EPOCHS=40`. Client split: 852/333/201 samples (mild non-IID — all 3 Grass-dominant).
+`IMG_SIZE=512, BATCH_SIZE=4, NUM_CLIENTS=3, NUM_ROUNDS=50, LOCAL_EPOCHS=3, DIRICHLET_ALPHA=1.5, LR=1e-4, PROXIMAL_MU=0.01, SALIENCY_LAMBDA=0.1`. Client split: 852/333/201 samples (mild non-IID — all 3 Grass-dominant).
 
-**Pending decision:** bump self-training to 100 epochs + early stopping (patience~15), and consider a more extreme non-IID re-partition (5 clients, α=0.3) before the real RunPod run — see PROGRESS.md.
+**As of 2026-08-09, re-running on RunPod with**: `SELFTRAIN_EPOCHS=100` (was 40) + early stopping (patience=15 on held-out val mIoU). `NUM_CLIENTS`/`DIRICHLET_ALPHA` deliberately **unchanged** — user explicitly decided to keep Navin's original non-IID split and dataset merge for this round; only revisit those if Part 2 results indicate it's needed (see PROGRESS.md "Open decisions").
 
 ## Environment
 
 - **Local laptop**: Windows, RTX 4050 Laptop GPU (6GB), Python 3.11 venv at `a:/thesis/.venv` (torch 2.5.1+cu121). Used for fast demo/smoke-test runs only, not final results.
-- **Local data staging** (gitignored, not in repo): `a:/thesis/data/floodnet/`, `a:/thesis/data/water290/`, `a:/thesis/data/part1_outputs/` (masks/checkpoint/config pulled from Navin's Kaggle kernel via `kaggle kernels output navinxqz/fed-salgate-v2-part-1`).
-- **RunPod**: planned for full-scale runs, on hold pending pod provisioning. SSH keypair already generated locally (`~/.ssh/runpod_fedsalgate`), public key ready to add to RunPod account settings.
-- **Credentials**: Kaggle token at `~/.kaggle/kaggle.json`, GitHub via dedicated SSH key (`~/.ssh/github_fedsalgate`, configured in `~/.ssh/config`). HuggingFace token not yet set up.
+- **Local data staging** (gitignored, not in repo): `a:/thesis/data/floodnet/`, `a:/thesis/data/water290/`, `a:/thesis/data/part1_outputs/` (Navin's original 40-epoch Kaggle outputs — superseded once the RunPod 100-epoch rerun finishes, kept for comparison).
+- **RunPod** (live as of 2026-08-09): pod deployed via the `runpod` Python SDK (not the web UI) using an account-level API key — full deploy/manage access, not just SSH. Pod: RTX 4090, 24GB VRAM, Secure Cloud ($0.74/hr — Community had no stock at deploy time), `/workspace` volume. SSH alias `runpod` configured in `~/.ssh/config` (host `103.196.86.102`, port may change if the pod is recreated — check `~/.runpod/last_pod.json` or re-query via the API if the alias stops connecting). Repo cloned to `/workspace/fed-salgate`; datasets at `/workspace/data/floodnet`, `/workspace/data/water290`.
+- **Credentials** (all local-only, gitignored, never committed):
+  - Kaggle: `~/.kaggle/kaggle.json` (laptop) and `~/.kaggle/kaggle.json` (pod, copied over)
+  - GitHub: dedicated SSH key `~/.ssh/github_fedsalgate` (laptop), copied to the pod at the same path for the pod's own `git` access
+  - RunPod: SSH key `~/.ssh/runpod_fedsalgate` (laptop only, private key never leaves the laptop); API key at `~/.runpod/api_key.txt` (laptop only) — used via the `runpod` pip package for pod create/terminate
+  - HuggingFace: token at `~/.cache/huggingface/token` (laptop). Private dataset repo: `avoymollick/fedsalgate-artifacts` — the archive destination for generated results/checkpoints, not a dependency for starting a run (see PROGRESS.md 2026-08-09 for the full explanation of why).
+- **Long-running jobs on the pod**: always launch with `nohup ... > log 2>&1 < /dev/null &` + `disown` — the SSH connection to this pod has had a few transient timeouts (unrelated to the training process itself), so anything multi-hour must survive a dropped connection.
 
 ## Known gotchas (read before editing notebooks)
 
