@@ -142,13 +142,20 @@ Neither water290 ablation explained Fed-SalGate's Part 2 loss (both point at a r
 - Re-partitions with **`NUM_CLIENTS=5, DIRICHLET_ALPHA=0.3`** (up from 3/1.5) — meaningfully harsher non-IID
 - Backs up the old 3-client/α=1.5 `client_indices.pkl`/`config.json` (suffix `.3clients_a1.5.bak`) before overwriting in place — Part 2's actual completed results are saved separately (`part2_v2_summary.json`) and untouched by this either way
 
-In progress: dominant-class scan over 1445 samples, ~2.3 it/s, no errors.
+**Repartition result**: client sizes **107 / 815 / 33 / 300 / 131** — genuinely more diverse than the original 728/347/311 (dramatic size imbalance, 33 to 815) and dominant classes 38.5%/63.3%/28.6%/52.1% Grass plus **Client 4 is Tree-dominant (37.5%)** — the first client in either run to not be Grass-dominant.
+
+**Scope decision for this rerun**: patched `part2/part2_run.py` to skip the two LiteUNet experiments (Experiments 4/5) this pass — run just the core DeepLabV3+ FedAvg/FedProx/Fed-SalGate comparison first (~3hrs at the new per-round cost vs ~8hrs for all 5), decide on LiteUNet reruns after seeing whether the core result holds up. Rationale discussed openly with user re: time/cost efficiency (~$7 spent so far, well under budget, but no reason to blindly rerun everything when the 3-way comparison is what actually answers the question).
+
+**Real bug found on first launch attempt**: crashed immediately with `ValueError: Expected more than 1 value per channel when training, got input size torch.Size([1, 256, 1, 1])` — a PyTorch BatchNorm error. Root cause: Client 2 has only 33 samples; `33 % BATCH_SIZE(4) == 1`, so its last training batch each epoch had exactly 1 sample, and BatchNorm can't compute variance from a single sample in training mode. Never triggered before because `CLIENT_SUBSAMPLE=96` is divisible by 4, so previously every client's per-round batch count was always a clean multiple of 4 — this is a genuine edge case the harsher, smaller-client split surfaced. Fixed with `drop_last=(len(sub_ds) > BATCH_SIZE)` on the client `DataLoader` (guarded so a client smaller than one batch still gets a partial batch rather than zero). Verified fix works: relaunched, Round 1/50 completed cleanly, gates correctly show 5 uniform values (`0.2` each) to start.
+
+In progress: Experiment 1 (FedAvg), Round 1/50 done, no errors.
 
 ---
 
 ## Open decisions / next up
 
-- **5-client/α=0.3 Part 2 rerun**: this is now the main line — once repartitioning finishes, run Part 2 fresh (all 5 experiments, ~5 hours) on the new split. If gates actually move and Fed-SalGate pulls ahead, that's the headline result.
+- **5-client/α=0.3 Part 2 rerun (DeepLabV3+ only)**: in progress — this is the main line. Watching specifically whether the saliency-consensus gates actually move off uniform this time, and whether Fed-SalGate's held-out mIoU beats FedAvg/FedProx.
+- **LiteUNet reruns**: deferred until the DeepLabV3+ result is in — run separately later if the core result is worth confirming on the lightweight variant too.
 - **Possible 3rd water290 ablation** (FloodNet-GT-only, no water290, for a complete 3-way comparison table): parked, not blocking the non-IID line.
 - **Part 3 + ablations**: on hold until the non-IID rerun result is in.
-- **Backport pod-only fixes to the git repo**: the GIF-file fix, mask-gen skip guard, and now the repartitioning script were all applied/run directly on the pod, not committed to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting so the committed version matches what actually worked.
+- **Backport pod-only fixes to the git repo**: the GIF-file fix, mask-gen skip guard, repartitioning script, LiteUNet-skip patch, and the `drop_last` BatchNorm fix were all applied/run directly on the pod, not committed to git. Still needs porting so the committed notebooks match what actually worked — growing list, do this as one consolidated pass once the current run resolves.
