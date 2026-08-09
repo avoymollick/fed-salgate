@@ -123,13 +123,20 @@ Built as a **standalone, focused script** (`/workspace/water290_binary.py`, not 
 - **The number that actually matters**: final evaluation on the *same 59 FloodNet held-out real photos* used throughout Part 1/2 (loaded via the same `gt_val_indices.pkl`, ground truth binarized: class 5=Water → 1, else → 0) — this is the out-of-distribution transfer number, i.e. does water290 alone actually help on real flood-drone photos.
 - Sanity-checked the held-out-index reconstruction logic *before* the full run (59 indices, 51+347=398 total matching config exactly, sample mask correctly contains class 5) rather than discovering a bug after an hour of training.
 
-In progress as of this log entry: epoch 17/100, water290-internal val IoU = 0.7814 (78%, pixel acc 90%) — strong in-distribution result, as expected for a properly-scoped binary task. Final FloodNet-transfer IoU still pending.
+**Final result** (early-stopped at epoch 64, best epoch's water290-val IoU=0.8132):
+
+| Metric | IoU | Pixel Acc |
+|---|---|---|
+| water290-internal (in-distribution) | **0.8132** | 0.9155 |
+| FloodNet real held-out GT, binarized (out-of-distribution transfer) | **0.2340** | 0.6585 |
+
+**Clean, decisive domain-gap finding**: the model learns water290 itself very well (81% IoU) but that skill barely transfers to FloodNet's real aerial-drone photos (23% IoU). water290 and FloodNet are visually different enough (likely camera angle/altitude/style) that water290 alone is not a substitute for real FloodNet-domain water supervision. This does **not** prove the merge (water290 + FloodNet GT together, as the main pipeline does) is harmful — only that water290 in isolation isn't sufficient. Archived to HF: `avoymollick/fedsalgate-artifacts/water290_binary_ablation`. Plot downloaded to `a:/thesis/data/water290_binary_plots/`.
 
 ---
 
 ## Open decisions / next up
 
-- **Binary water detector transfer result**: pending — this is what actually tells us whether water290 is worth keeping in the merge at all, or whether it's not pulling its weight.
+- **Possible 3rd ablation for a complete picture**: FloodNet-GT-only self-training (no water290 at all) — would let us build a full 3-way comparison (FloodNet-only vs. water290-only vs. merged) to isolate water290's *marginal* contribution when combined with real data, rather than just its standalone performance. Not yet run — worth considering before concluding on the water290 question.
 - **Non-IID severity (5 clients/α=0.3)**: still the other live hypothesis for why Fed-SalGate didn't beat FedAvg in the Part 2 run — deferred behind the binary-masking investigation per user's explicit call, not abandoned.
-- **Part 3 + ablations**: on hold until both of the above are resolved.
+- **Part 3 + ablations**: on hold until the above are resolved.
 - **Backport pod-only fixes to the git repo**: the GIF-file fix and the mask-gen skip guard (Part 1) were applied directly on the pod's converted `.py` script, not to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting into the notebook so the committed version matches what actually worked. Same applies to any further Part 1 changes made along the way.
