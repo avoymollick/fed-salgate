@@ -72,14 +72,44 @@ User gave full delegated access: RunPod API key (deploy pods directly, not just 
 - Both fixes applied directly on the pod via small Python patch scripts (anchor-based text replace + `ast.parse` validation before writing, same safety pattern established during the local AMP patching work) — **not yet ported back to the notebook in the git repo**. Need to backport `part1/fed-salgate-v2-part-1.ipynb` with the same two fixes once Part 1 finishes successfully, so the committed notebook matches what actually worked.
 - **Self-training result (100 epochs, RTX 4090)**: ran the full 100 epochs, early stopping never triggered (val mIoU kept improving enough to stay under the 15-epoch patience threshold throughout — LR decayed via `ReduceLROnPlateau` at epochs 30/43/58/74/86/94, roughly halving each time down to 1.56e-06 by epoch 100). Loss dropped steadily 1.65→0.125. **Final held-out val mIoU: 0.4117** (best, epoch 88) vs the original 40-epoch run's 0.382 — a real **+0.0297 (~7.8% relative) improvement**, confirming the "more epochs" call was worth it. Epoch-1 numbers (loss=1.647, mIoU=0.159) matched the original Kaggle run almost exactly, confirming the RunPod environment is behaving consistently with the original setup, not producing a different result for spurious reasons.
 - **Part 1 fully complete** — no errors, all 6 plots generated (`00`–`04`, `10`), masks written (1047 unlabeled / 450 val / 448 test), checkpoint saved. New Dirichlet partition (same seed, α=1.5, 3 clients) came out **728 / 347 / 311** — noticeably different from the original run's 852/333/201, because the better self-trained model produces different pseudo-labels, which shifts the per-image dominant-class computation feeding the partition. Not a bug — expected consequence of retraining. All 3 clients still Grass-dominant (47.6–59.9%).
-- **Archived to HuggingFace**: full `/workspace/working` (295MB — masks, checkpoint, config, client_indices.pkl, gt_val_indices.pkl, all plots) pushed to `avoymollick/fedsalgate-artifacts/part1_100epoch`. Verified file listing after upload. This is now the durable copy — survives pod termination.
+- **Archived to HuggingFace**: full `/workspace/working` (295MB — masks, checkpoint, config, client_indices.pkl, gt_val_indices.pkl, all plots) pushed to `avoymollick/fedsalgate-artifacts/part1_100epoch`. Verified file listing after upload (all 11 plots, incl. the 5 "plain-language proof pack" plots that generate after the "PART 1 COMPLETE" banner prints). This is now the durable copy — survives pod termination.
+- Downloaded all 11 Part 1 plots to the laptop too (`a:/thesis/data/part1_plots_100epoch/`).
+
+## 2026-08-09/10 — Part 2 full run (50 rounds, 3 clients/α=1.5): Fed-SalGate did NOT beat FedAvg
+
+Ran Part 2 in full on the pod (converted notebook → script, only 2 lines needed patching — `IN_KAGGLE=False` and `WORKING_DIR='/workspace/working'` — since Part 2 shares Part 1's working dir by design and `FLOODNET_BASE` was already correct in Part 1's saved `config.json`). All speedups from 2026-08-08 (AMP, `num_workers=4`, `cudnn.benchmark`, zip fix) were already baked into the committed notebook, no extra patching needed for those.
+
+**Round-log mIoU (pseudo-val subset, during training)**:
+
+| Model | Round mIoU (best) | Wall time |
+|---|---|---|
+| DeepLabV3+ / FedAvg | 0.4607 | 62.9 min |
+| DeepLabV3+ / FedProx | 0.4582 | 62.9 min |
+| DeepLabV3+ / Fed-SalGate | 0.4629 | 66.8 min |
+| LiteUNet / FedAvg | 0.2242 | 56.7 min |
+| LiteUNet / Fed-SalGate | 0.1677 | 59.4 min |
+
+**Final held-out real-GT mIoU (the number that actually matters)**:
+
+| Model | mIoU | Pixel Acc |
+|---|---|---|
+| DeepLabV3+ / FedAvg | **0.4229** | 0.8124 |
+| DeepLabV3+ / FedProx | 0.4174 | 0.8064 |
+| DeepLabV3+ / Fed-SalGate | 0.4186 | 0.8124 |
+| LiteUNet / FedAvg | **0.2682** | 0.7616 |
+| LiteUNet / Fed-SalGate | 0.2262 | 0.7681 |
+
+**Fed-SalGate gain vs FedAvg: −0.0042. Fed-SalGate gain vs FedProx: +0.0012.** Fed-SalGate lost narrowly to FedAvg on DeepLabV3+ (won on the round-log/pseudo-val metric but lost on the held-out one) and lost more clearly on LiteUNet.
+
+**Diagnosis**: watched the saliency-consensus gates throughout every round checked — they stayed within ~0.98–1.02 of uniform (1.0) the *entire* 50 rounds, never meaningfully deviating. The gating mechanism only does something when clients' Grad-CAM explanations disagree; with the current 3-client/α=1.5 split (mild non-IID — all 3 clients Grass-dominant, 47.6–59.9%), clients apparently agree too much for gating to ever activate. Fed-SalGate effectively collapsed to FedAvg-plus-overhead. This matches the pre-planned trigger condition for revisiting non-IID severity.
+
+Total pod time for Part 2: ~5 hours across the 5 experiments.
 
 ---
 
 ## Open decisions / next up
 
-- **Non-IID severity (5 clients/α=0.3)**: explicitly deferred by user this round — revisit only if Part 2 results on the current 3-client/α=1.5 split suggest it's needed.
-- **Binary water-masking dataset**: user flagged this as a possible second iteration target ("if needed again part 1 with binary masking dataset") — meaning after seeing Part 2 results on the 100-epoch Part 1 rerun, may revisit how the water290 binary masks are merged in, then re-run Part 1 → Part 2 again before moving to Part 3.
-- **Part 2 full run**: next up — 50 rounds, full data, on the pod, using the fresh Part 1 outputs (mIoU 0.4117 checkpoint/masks/client split).
-- **Part 3 + ablations**: after Part 2, pending the reassessment above.
-- **Backport pod-only fixes to the git repo**: the GIF-file fix and the mask-gen skip guard were applied directly on the pod's converted `.py` script, not to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting into the notebook so the committed version matches what actually worked.
+- **Non-IID severity (5 clients/α=0.3)**: proposed to user as the most likely fix, given the gate-uniformity diagnosis above — **awaiting user go-ahead** before re-running Part 1.
+- **Binary water-masking dataset**: secondary lever user flagged, lower priority than non-IID severity given the diagnosis points specifically at gate activation, not mask quality.
+- **Part 3 + ablations**: on hold until the non-IID question is resolved — no point benchmarking against literature baselines with a Fed-SalGate config that hasn't been shown to activate yet.
+- **Backport pod-only fixes to the git repo**: the GIF-file fix and the mask-gen skip guard (Part 1) were applied directly on the pod's converted `.py` script, not to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting into the notebook so the committed version matches what actually worked. Same applies to any Part 1 changes made for the next iteration (client count/α).
