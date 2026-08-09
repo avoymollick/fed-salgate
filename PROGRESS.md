@@ -105,11 +105,31 @@ Ran Part 2 in full on the pod (converted notebook → script, only 2 lines neede
 
 Total pod time for Part 2: ~5 hours across the 5 experiments.
 
+User's call after seeing this: rather than pursue the non-IID severity fix immediately, revisit the water290 binary-masking dataset first, as an explicit ablation (user's framing: "we will again check part 1 and part 2 with binary masking only as experiment"). Non-IID severity stays on the list, deferred.
+
+## 2026-08-09 — Ablation 1: self-train on water290 ONLY (flawed methodology, caught and corrected)
+
+**What was run**: a separate copy of Part 1 (`part1/part1_water290only.py`, output to its own `/workspace/working_water290only` directory so the good merged-training results were never touched), with the self-training data pool changed to *only* the 290 water290 images — FloodNet's 398 real GT images excluded from training entirely (kept only for the validation split, for a comparable held-out number). Also fixed a latent bug this surfaced: the per-class loss-weight formula (`1/(freq+eps)`) assigns huge phantom weights to classes with zero training pixels; with only water290 in the pool, 9 of 10 classes have zero pixels, so the naive formula would've crushed water's own normalized weight to ~0.004. Fixed to zero-out absent classes instead.
+
+**Result**: training loss collapsed almost instantly (1.036→0.009, full memorization of the tiny 290-image set); held-out **10-class** mIoU never moved off ~0.02 across 19 epochs (early-stopped, best 0.0228) — worse than even the original heuristic baseline (0.052).
+
+**User caught a real methodology flaw in this experiment**: the model architecture was left at `NUM_CLASSES=10` (10 output channels) even though training data only ever supervised one class (Water) via `ignore_index=255` on everything else. The other 9 channels never received a gradient update, so at eval time the model was outputting near-random logits for 9 classes and getting scored against them anyway — conflating "how good is water290 at teaching water detection" with "what happens when you starve 9 unrelated output channels." The 0.0228 number is real (nothing fabricated) but doesn't cleanly answer the actual question. Archived to HF anyway (`avoymollick/fedsalgate-artifacts/part1_water290only`) as a documented negative result / cautionary methodology note, not as the real answer.
+
+## 2026-08-09/10 — Ablation 2: proper binary (2-class) water detector — the corrected version
+
+Built as a **standalone, focused script** (`/workspace/water290_binary.py`, not a patched copy of Part 1's pipeline) specifically to answer the real question cleanly:
+- Genuine 2-class model: `DeepLabV3Plus(classes=2)`, water vs. not-water, plain `CrossEntropyLoss` (no `ignore_index` needed — "not water" is now a real, supervised class)
+- Trained/early-stopped (patience=15, ReduceLROnPlateau) on an 80/20 split of water290 itself — this is the in-distribution number
+- **The number that actually matters**: final evaluation on the *same 59 FloodNet held-out real photos* used throughout Part 1/2 (loaded via the same `gt_val_indices.pkl`, ground truth binarized: class 5=Water → 1, else → 0) — this is the out-of-distribution transfer number, i.e. does water290 alone actually help on real flood-drone photos.
+- Sanity-checked the held-out-index reconstruction logic *before* the full run (59 indices, 51+347=398 total matching config exactly, sample mask correctly contains class 5) rather than discovering a bug after an hour of training.
+
+In progress as of this log entry: epoch 17/100, water290-internal val IoU = 0.7814 (78%, pixel acc 90%) — strong in-distribution result, as expected for a properly-scoped binary task. Final FloodNet-transfer IoU still pending.
+
 ---
 
 ## Open decisions / next up
 
-- **Non-IID severity (5 clients/α=0.3)**: proposed to user as the most likely fix, given the gate-uniformity diagnosis above — **awaiting user go-ahead** before re-running Part 1.
-- **Binary water-masking dataset**: secondary lever user flagged, lower priority than non-IID severity given the diagnosis points specifically at gate activation, not mask quality.
-- **Part 3 + ablations**: on hold until the non-IID question is resolved — no point benchmarking against literature baselines with a Fed-SalGate config that hasn't been shown to activate yet.
-- **Backport pod-only fixes to the git repo**: the GIF-file fix and the mask-gen skip guard (Part 1) were applied directly on the pod's converted `.py` script, not to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting into the notebook so the committed version matches what actually worked. Same applies to any Part 1 changes made for the next iteration (client count/α).
+- **Binary water detector transfer result**: pending — this is what actually tells us whether water290 is worth keeping in the merge at all, or whether it's not pulling its weight.
+- **Non-IID severity (5 clients/α=0.3)**: still the other live hypothesis for why Fed-SalGate didn't beat FedAvg in the Part 2 run — deferred behind the binary-masking investigation per user's explicit call, not abandoned.
+- **Part 3 + ablations**: on hold until both of the above are resolved.
+- **Backport pod-only fixes to the git repo**: the GIF-file fix and the mask-gen skip guard (Part 1) were applied directly on the pod's converted `.py` script, not to `part1/fed-salgate-v2-part-1.ipynb` in git. Still needs porting into the notebook so the committed version matches what actually worked. Same applies to any further Part 1 changes made along the way.
