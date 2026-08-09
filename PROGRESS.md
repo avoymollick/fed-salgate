@@ -148,7 +148,7 @@ Neither water290 ablation explained Fed-SalGate's Part 2 loss (both point at a r
 
 **Real bug found on first launch attempt**: crashed immediately with `ValueError: Expected more than 1 value per channel when training, got input size torch.Size([1, 256, 1, 1])` — a PyTorch BatchNorm error. Root cause: Client 2 has only 33 samples; `33 % BATCH_SIZE(4) == 1`, so its last training batch each epoch had exactly 1 sample, and BatchNorm can't compute variance from a single sample in training mode. Never triggered before because `CLIENT_SUBSAMPLE=96` is divisible by 4, so previously every client's per-round batch count was always a clean multiple of 4 — this is a genuine edge case the harsher, smaller-client split surfaced. Fixed with `drop_last=(len(sub_ds) > BATCH_SIZE)` on the client `DataLoader` (guarded so a client smaller than one batch still gets a partial batch rather than zero). Verified fix works: relaunched, Round 1/50 completed cleanly, gates correctly show 5 uniform values (`0.2` each) to start.
 
-In progress: Experiment 1 (FedAvg), Round 1/50 done, no errors.
+In progress: Experiment 1 (FedAvg), Round 1/50 done, no errors. Independently re-verified the running config against the log directly (not just trusting the launch): `NUM_CLIENTS: 5`, `DIRICHLET_ALPHA: 0.3`, client sizes `107/815/33/300/131` all match exactly what repartitioning produced, correct experiment order (FedAvg first). Note for reading gate values in the log as this progresses: FedAvg and FedProx *always* print uniform gates (`[0.2]*5`) by design — they don't use saliency-consensus gating at all — so only **Fed-SalGate's** (Experiment 3) gate values are actually informative about whether the mechanism is activating this time.
 
 ---
 
