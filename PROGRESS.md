@@ -257,4 +257,34 @@ Final gates for this config: `[1.227, 1.079, 1.449, 0.939, 0.305]` against agree
 | τ=0.85, β=10 | 0.4148 | +0.0003 | +0.0077 |
 | **τ=0.85, β=20** | **0.4327** | **+0.0182** | **+0.0256** |
 
-Not a marginal edge — a genuinely meaningful improvement over both baselines. Final gates: `[1.629, 1.025, 1.455, 0.635, 0.256]` against agreements `[0.937, 0.857, 0.908, 0.815, 0.757]`, an even wider, more decisive spread than config 1's. Best single per-round mIoU during training was 0.4574. Notably Road-Flooded IoU jumped to 0.291 (class 3) and Vehicle jumped to 0.246 (class 7, both were weak classes in every prior run) — worth checking the full per-class breakdown once config 3 lands, this may be broader than just the Water-class win seen previously. This is the strongest evidence so far that the original τ=0.5 was a real calibration bug, not a fundamental flaw in the saliency-consensus-gating idea. Config 3 (τ=0.80, β=15.0) still running, will confirm whether this generalizes across nearby (τ,β) settings or is sensitive to the exact values.
+Not a marginal edge — a genuinely meaningful improvement over both baselines. Final gates: `[1.629, 1.025, 1.455, 0.635, 0.256]` against agreements `[0.937, 0.857, 0.908, 0.815, 0.757]`, an even wider, more decisive spread than config 1's. Best single per-round mIoU during training was 0.4574.
+
+**Config 3 result (τ=0.80, β=15.0) — sweep complete, and this one did NOT help**:
+
+| Config | Held-out mIoU | vs FedAvg (0.4145) | vs FedProx (0.4071) |
+|---|---|---|---|
+| Original (τ=0.5, β=10) | 0.4086 | −0.0059 | +0.0015 |
+| τ=0.85, β=10 | 0.4148 | +0.0003 | +0.0077 |
+| **τ=0.85, β=20** | **0.4327** | **+0.0182** | **+0.0256** |
+| τ=0.80, β=15 | 0.4084 | −0.0061 | +0.0012 |
+
+**This is the key finding that sharpens the story**: τ=0.80/β=15 shows real gate differentiation (final gates `[1.238, 1.000, 1.202, 1.176, 0.384]`, similar spread to config 1) and yet performs essentially identically to the original broken config — actually the single worst of all four results tested. So it is **not simply true that "recentering τ away from 0.5 fixes it"** — τ=0.80 alone (even paired with a steeper β=15 than the original's β=10) gave no benefit at all. Only **τ=0.85 combined with the steep β=20** produced a real win, and that combination applied the strongest down-weighting of the lowest-agreement client of any config tested (client 4's final gate: 0.255 at τ=0.85/β=20, vs 0.305 at τ=0.85/β=10, vs 0.384 at τ=0.80/β=15). The pattern across all 4 results is consistent with "more decisive suppression of the disagreeing client helps, weak/moderate suppression doesn't" rather than simply "avoid saturation" — though with only 3 sweep points this is a hypothesis for a future, more systematic sweep, not a proven trend.
+
+**Per-class analysis (τ=0.85/β=20 vs FedAvg) — a genuinely broader win than the earlier "Water only" framing**:
+
+| Class | FedAvg | Fed-SalGate (τ=0.85,β=20) | Δ |
+|---|---|---|---|
+| Background | 0.6992 | 0.7088 | +0.0096 |
+| Building-Flooded | 0.2259 | 0.2075 | −0.0184 |
+| Building-NonFlooded | 0.3886 | **0.5119** | **+0.1233** |
+| Road-Flooded | 0.2887 | 0.2913 | +0.0026 |
+| Road-NonFlooded | 0.4773 | 0.4342 | −0.0431 |
+| Water | 0.4674 | 0.5060 | +0.0386 |
+| Tree | 0.4923 | 0.4891 | −0.0032 |
+| Vehicle | 0.1568 | 0.1956 | +0.0388 |
+| Pool | 0.2081 | 0.2452 | +0.0371 |
+| Grass | 0.7407 | 0.7375 | −0.0032 |
+
+**6 of 10 classes improve**, including a large jump on Building-NonFlooded (+0.123) alongside the previously-known Water win (+0.039) plus real gains on Vehicle (+0.039) and Pool (+0.037) — two classes that were consistently among the weakest in every prior run. The losses are concentrated on Road-NonFlooded (−0.043, the biggest single drop) and Building-Flooded (−0.018). This is meaningfully stronger evidence for the thesis than the earlier single-class framing.
+
+**Conclusion**: `GATE_TAU=0.85, GATE_BETA=20.0` is the new best-known Fed-SalGate configuration — the strongest result across the entire investigation (mild non-IID, harsh non-IID default gates, and this sweep). Recommend adopting these as the new defaults (replacing `GATE_BETA=10.0, GATE_TAU=0.5` in Part 1's `config.json` / Part 2's fallback defaults) going forward. Full results archived at `/workspace/working/fed_salgate_outputs/gate_sweep_results.json` on the pod; checkpoints at `/workspace/working/checkpoints/fedsalgate_tau0.85_beta20_final.pth` etc. Total sweep cost: ~4.6 hours GPU time (~$3.40 at $0.74/hr) across 3 configs, on top of the pod-resume overhead.

@@ -49,16 +49,16 @@ Each Part 3 model notebook is designed to run standalone and emit `result_<model
 
 So the gating mechanism demonstrably works as designed under real non-IID stress, but that correct behavior doesn't translate into better held-out generalization — if anything Fed-SalGate's gap vs FedAvg is slightly wider under the harsher split. **Nuance worth keeping**: Fed-SalGate wins specifically on Water IoU (0.5237 vs 0.4674/0.4758) in the 5-client run — meaningful for a flood-damage thesis even though overall mIoU is behind. See PROGRESS.md 2026-08-10 for full per-class breakdown and the open question of what this means for the paper's narrative — **not yet resolved, needs a decision before Part 3**.
 
-**In progress (2026-08-10): gate-hyperparameter tuning sweep — early results reverse the narrative.** Diagnosed why gates barely moved even in the "activated" 5-client run: real agreement scores (0.769–0.930) are far above `τ=0.5`, so `sigmoid(β·(agreement−τ))` was always saturated near 1.0 regardless of relative differences between clients — a calibration bug, not a mechanism failure. Sweeping `(τ=0.85,β=10)`, `(τ=0.85,β=20)`, `(τ=0.80,β=15)`, training Fed-SalGate only per config (FedAvg=0.4145/FedProx=0.4071 reused from the cached 5-client/α=0.3 run, not retrained). Script: `part2/part2_gate_sweep.py` (pod-only so far, not yet backported to git).
+**RESOLVED (2026-08-10): gate-hyperparameter tuning sweep found a real fix.** Diagnosed why gates barely moved even in the "activated" 5-client run: real agreement scores (0.769–0.930) are far above `τ=0.5`, so `sigmoid(β·(agreement−τ))` was always saturated near 1.0 regardless of relative differences between clients — a calibration bug, not a mechanism failure. Swept `(τ=0.85,β=10)`, `(τ=0.85,β=20)`, `(τ=0.80,β=15)`, training Fed-SalGate only per config (FedAvg=0.4145/FedProx=0.4071 reused from the cached 5-client/α=0.3 run, not retrained). Script: `part2/part2_gate_sweep.py` (pod-only, not yet backported to git — pending task).
 
-| Config | Held-out mIoU | vs FedAvg | vs FedProx |
+| Config | Held-out mIoU | vs FedAvg (0.4145) | vs FedProx (0.4071) |
 |---|---|---|---|
 | Original (τ=0.5, β=10) | 0.4086 | −0.0059 | +0.0015 |
 | τ=0.85, β=10 | 0.4148 | +0.0003 | +0.0077 |
 | **τ=0.85, β=20** | **0.4327** | **+0.0182** | **+0.0256** |
-| τ=0.80, β=15 | running | — | — |
+| τ=0.80, β=15 | 0.4084 | −0.0061 | +0.0012 |
 
-Both recentered configs beat FedAvg for the first time in the whole investigation, and τ=0.85/β=20 is a real, non-marginal win — strong evidence the original negative result was driven by `τ` miscalibration, not a flaw in the saliency-consensus-gating idea itself. **This changes the likely paper narrative** — pending config 3 and a full per-class check, "tune the gate threshold to the real agreement range" may become the actual fix rather than a due-diligence dead end. Results land in `/workspace/working/fed_salgate_outputs/gate_sweep_results.json`, written incrementally per config. See PROGRESS.md 2026-08-10 for full details and the pod-resume snags hit along the way.
+**New best-known Fed-SalGate config: `GATE_TAU=0.85, GATE_BETA=20.0`** — the strongest Fed-SalGate result across the whole investigation, and the first genuine win over FedAvg. Important nuance: it's not simply "any recentered τ helps" — τ=0.80/β=15 performed essentially the same as the original broken config despite showing real gate spread, so the specific combination matters (pattern: the more decisively the lowest-agreement client gets suppressed, the better the result — τ=0.85/β=20 gave that client the lowest gate, 0.255, of any config tested). Per-class analysis broadens the story past the earlier "Water-only" win: **6 of 10 classes improve** at this config, including a large Building-NonFlooded jump (+0.123) plus Water (+0.039), Vehicle (+0.039), Pool (+0.037); losses concentrated on Road-NonFlooded (−0.043) and Building-Flooded (−0.018). Recommend adopting `τ=0.85, β=20.0` as the new default going forward (replacing `GATE_BETA=10.0, GATE_TAU=0.5`) — this is the config the paper should lead with. Full breakdown in PROGRESS.md 2026-08-10.
 
 ## Environment
 
