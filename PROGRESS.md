@@ -206,7 +206,7 @@ Archived to HF: `avoymollick/fedsalgate-artifacts/part2_5clients_a03` (note: thi
 - **LiteUNet reruns**: not yet done on the 5-client/α=0.3 split — deferred pending the above decision.
 - **Possible 3rd water290 ablation** (FloodNet-GT-only, no water290, for a complete 3-way comparison table): parked.
 - **Part 3 + ablations**: on hold pending the narrative decision above.
-- **Backport pod-only fixes to the git repo**: the GIF-file fix, mask-gen skip guard, repartitioning script, LiteUNet-skip patch, and the `drop_last` BatchNorm fix were all applied/run directly on the pod, not committed to git. Still needs porting so the committed notebooks match what actually worked.
+- ~~Backport pod-only fixes to the git repo~~ — **done 2026-08-10**: the GIF-file fix and mask-gen skip guard are in `part1/fed-salgate-v2-part-1.ipynb`; the `drop_last` BatchNorm fix, the gate call-time-lookup fix, and the new `τ=0.85/β=20.0` defaults are in `part2/notebook3896666d14.ipynb`. The repartitioning script and the LiteUNet-skip patch remain pod-only/undone deliberately — the former is a one-off utility (not part of the normal pipeline), the latter was a scope decision for a specific rerun, not a bug fix, so it shouldn't become the notebook's permanent default.
 
 ## 2026-08-10 — Session paused for team discussion
 
