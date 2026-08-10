@@ -148,14 +148,40 @@ Neither water290 ablation explained Fed-SalGate's Part 2 loss (both point at a r
 
 **Real bug found on first launch attempt**: crashed immediately with `ValueError: Expected more than 1 value per channel when training, got input size torch.Size([1, 256, 1, 1])` — a PyTorch BatchNorm error. Root cause: Client 2 has only 33 samples; `33 % BATCH_SIZE(4) == 1`, so its last training batch each epoch had exactly 1 sample, and BatchNorm can't compute variance from a single sample in training mode. Never triggered before because `CLIENT_SUBSAMPLE=96` is divisible by 4, so previously every client's per-round batch count was always a clean multiple of 4 — this is a genuine edge case the harsher, smaller-client split surfaced. Fixed with `drop_last=(len(sub_ds) > BATCH_SIZE)` on the client `DataLoader` (guarded so a client smaller than one batch still gets a partial batch rather than zero). Verified fix works: relaunched, Round 1/50 completed cleanly, gates correctly show 5 uniform values (`0.2` each) to start.
 
-In progress: Experiment 1 (FedAvg), Round 1/50 done, no errors. Independently re-verified the running config against the log directly (not just trusting the launch): `NUM_CLIENTS: 5`, `DIRICHLET_ALPHA: 0.3`, client sizes `107/815/33/300/131` all match exactly what repartitioning produced, correct experiment order (FedAvg first). Note for reading gate values in the log as this progresses: FedAvg and FedProx *always* print uniform gates (`[0.2]*5`) by design — they don't use saliency-consensus gating at all — so only **Fed-SalGate's** (Experiment 3) gate values are actually informative about whether the mechanism is activating this time.
+Independently re-verified the running config against the log directly (not just trusting the launch): `NUM_CLIENTS: 5`, `DIRICHLET_ALPHA: 0.3`, client sizes `107/815/33/300/131` all matched exactly what repartitioning produced.
+
+**Timings**: FedAvg 90.9 min, FedProx 94.8 min, Fed-SalGate 95.1 min (all 50 rounds each, ~4.7 hours total — longer than the original 3-client run since 5 clients means more total per-round work, as anticipated).
+
+**Gate dynamics — the mechanism DID activate this time**, unlike the mild-non-IID run where gates stayed flat at 0.98–1.02 with no real pattern. Final-round gates correlated cleanly with each client's actual agreement score:
+
+| Client | Agreement | Gate |
+|---|---|---|
+| 0 | 0.9297 | 1.0238 |
+| 1 | 0.8649 | 1.0114 |
+| 2 | 0.8664 | 1.0118 |
+| 3 | 0.7855 | 0.9813 |
+| 4 | 0.7689 | **0.9717** (lowest agreement → lowest gate, correctly) |
+
+**Final held-out real-GT results**:
+
+| Model | mIoU | Pixel Acc |
+|---|---|---|
+| DeepLabV3+ / FedAvg | **0.4145** | 0.8147 |
+| DeepLabV3+ / FedProx | 0.4071 | 0.8075 |
+| DeepLabV3+ / Fed-SalGate | 0.4086 | 0.8085 |
+
+**Fed-SalGate gain vs FedAvg: −0.0059. Fed-SalGate gain vs FedProx: +0.0015.** Fed-SalGate still lost to FedAvg — by a slightly *wider* margin than the mild non-IID run (−0.0059 vs −0.0042). The core hypothesis (harsher non-IID → gating activates → Fed-SalGate wins) is only half-confirmed: the gating mechanism demonstrably works as designed (down-weights the lowest-agreement client, in clean proportion to its disagreement), but that down-weighting does not translate into better held-out generalization. Likely explanation: Grad-CAM agreement isn't a reliable proxy for "this client's contribution is harmful" — Client 4 (Tree-dominant, genuinely different data) disagreeing with the consensus doesn't mean its gradient signal was bad; it may have held complementary information that got suppressed.
+
+**Per-class nuance worth keeping for the paper**: Fed-SalGate actually **wins on Water IoU** (0.5237 vs FedAvg 0.4674, FedProx 0.4758 — a real +0.056/+0.048 improvement) and Building-NonFlooded (0.4028 vs 0.3886/0.3608) — but loses ground on Vehicle (0.1416, worst of the three), Road-Flooded (0.2672, worst), Tree (0.4578, worst), and Road-NonFlooded (0.4191, worst). For a flood-*damage* thesis, winning specifically on Water — arguably the single most flood-relevant class — while trading off on less-central classes is a genuine, defensible, class-specific finding, not just a clean loss.
+
+Archived to HF: `avoymollick/fedsalgate-artifacts/part2_5clients_a03` (note: this includes a redundant copy of Part 1's masks/checkpoint too, since Part 2 writes into the same shared working directory Part 1 used — harmless duplication, not a data issue). Plots downloaded to `a:/thesis/data/part2_5clients_a03_plots/` (the `25_gap4_lightweight.png` in the source folder was a stale leftover from the original 3-client run — not regenerated this pass since LiteUNet was skipped — excluded from the local copy to avoid confusion).
 
 ---
 
 ## Open decisions / next up
 
-- **5-client/α=0.3 Part 2 rerun (DeepLabV3+ only)**: in progress — this is the main line. Watching specifically whether the saliency-consensus gates actually move off uniform this time, and whether Fed-SalGate's held-out mIoU beats FedAvg/FedProx.
-- **LiteUNet reruns**: deferred until the DeepLabV3+ result is in — run separately later if the core result is worth confirming on the lightweight variant too.
-- **Possible 3rd water290 ablation** (FloodNet-GT-only, no water290, for a complete 3-way comparison table): parked, not blocking the non-IID line.
-- **Part 3 + ablations**: on hold until the non-IID rerun result is in.
-- **Backport pod-only fixes to the git repo**: the GIF-file fix, mask-gen skip guard, repartitioning script, LiteUNet-skip patch, and the `drop_last` BatchNorm fix were all applied/run directly on the pod, not committed to git. Still needs porting so the committed notebooks match what actually worked — growing list, do this as one consolidated pass once the current run resolves.
+- **What this means for the paper's narrative**: Fed-SalGate does not currently beat FedAvg on overall held-out mIoU in either non-IID regime tested (mild: −0.0042, harsh: −0.0059), despite the gating mechanism demonstrably activating correctly under the harsher split. Options going forward: (a) reframe around the Water-class-specific win + the mechanism's demonstrated correctness as the honest contribution, (b) investigate whether a different aggregation signal (not pure Grad-CAM agreement) would correlate better with "helpful vs harmful" client updates, (c) try tuning `GATE_BETA`/`GATE_TAU` before concluding, (d) accept and report the negative result plainly with the mechanistic analysis as the value-add. **Not yet decided — needs discussion, not another blind rerun.**
+- **LiteUNet reruns**: not yet done on the 5-client/α=0.3 split — deferred pending the above decision.
+- **Possible 3rd water290 ablation** (FloodNet-GT-only, no water290, for a complete 3-way comparison table): parked.
+- **Part 3 + ablations**: on hold pending the narrative decision above.
+- **Backport pod-only fixes to the git repo**: the GIF-file fix, mask-gen skip guard, repartitioning script, LiteUNet-skip patch, and the `drop_last` BatchNorm fix were all applied/run directly on the pod, not committed to git. Still needs porting so the committed notebooks match what actually worked.

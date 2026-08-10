@@ -38,7 +38,16 @@ Each Part 3 model notebook is designed to run standalone and emit `result_<model
 
 **Self-training (2026-08-09, RunPod rerun — this checkpoint/masks are the live foundation, reused as-is)**: `SELFTRAIN_EPOCHS=100` (was 40) + early stopping (patience=15 on held-out val mIoU), never triggered — ran the full 100 epochs. **Held-out val mIoU: 0.4117** (vs original 0.382). Archived to HF: `avoymollick/fedsalgate-artifacts/part1_100epoch`.
 
-**Client partitioning — CHANGED as of 2026-08-10**: Part 2's full run on the original `NUM_CLIENTS=3, DIRICHLET_ALPHA=1.5` split showed Fed-SalGate losing to plain FedAvg (0.4186 vs 0.4229 held-out mIoU), diagnosed as the saliency-consensus gates staying ~uniform the whole run (clients agreed too much under mild non-IID for gating to ever activate — see PROGRESS.md 2026-08-09/10). Per explicit user direction ("I need the best paper results"), re-partitioned to **`NUM_CLIENTS=5, DIRICHLET_ALPHA=0.3`** — reused the existing self-trained checkpoint/masks (no retraining needed) via a standalone repartition script. **New client sizes: 107/815/33/300/131** — genuinely more diverse than the old 728/347/311 (dramatic size imbalance; Client 4 is Tree-dominant, the first non-Grass-dominant client in either run). Old 3-client/α=1.5 partition backed up (`client_indices.pkl.3clients_a1.5.bak` / `config.json.3clients_a1.5.bak`) in the same `/workspace/working/fed_salgate_outputs/` directory on the pod — **this new partition is now the live config Part 2 reads**. This is now running (DeepLabV3+ FedAvg/FedProx/Fed-SalGate only this pass, LiteUNet deferred — see PROGRESS.md for live status and results).
+**Client partitioning — CHANGED as of 2026-08-10**: re-partitioned from the original `NUM_CLIENTS=3, DIRICHLET_ALPHA=1.5` to **`NUM_CLIENTS=5, DIRICHLET_ALPHA=0.3`** (client sizes 107/815/33/300/131) to test whether harsher non-IID would let saliency-consensus gating activate. Old 3-client/α=1.5 partition backed up (`client_indices.pkl.3clients_a1.5.bak` / `config.json.3clients_a1.5.bak`) alongside the current one in `/workspace/working/fed_salgate_outputs/` on the pod.
+
+**Part 2 results, both non-IID regimes now tested — Fed-SalGate has not beaten FedAvg in either**:
+
+| Split | FedAvg | FedProx | Fed-SalGate | Gates actually moved? |
+|---|---|---|---|---|
+| 3 clients, α=1.5 (mild) | 0.4229 | 0.4174 | 0.4186 | No — stayed ~uniform (0.98–1.02) |
+| 5 clients, α=0.3 (harsh) | 0.4145 | 0.4071 | 0.4086 | **Yes** — cleanly correlated with agreement, lowest-agreement client got lowest gate |
+
+So the gating mechanism demonstrably works as designed under real non-IID stress, but that correct behavior doesn't translate into better held-out generalization — if anything Fed-SalGate's gap vs FedAvg is slightly wider under the harsher split. **Nuance worth keeping**: Fed-SalGate wins specifically on Water IoU (0.5237 vs 0.4674/0.4758) in the 5-client run — meaningful for a flood-damage thesis even though overall mIoU is behind. See PROGRESS.md 2026-08-10 for full per-class breakdown and the open question of what this means for the paper's narrative — **not yet resolved, needs a decision before Part 3**.
 
 ## Environment
 
