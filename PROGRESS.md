@@ -247,4 +247,14 @@ One code-level fix was needed to make this work at all: the gate function's `bet
 | Original (τ=0.5, β=10) | 0.4086 | −0.0059 | +0.0015 |
 | **τ=0.85, β=10** | **0.4148** | **+0.0003** | **+0.0077** |
 
-Final gates for this config: `[1.227, 1.079, 1.449, 0.939, 0.305]` against agreements `[0.879, 0.851, 0.923, 0.825, 0.670]` — a real spread (0.305–1.449) compared to the original run's narrow 0.972–1.024 band, confirming the sigmoid-saturation diagnosis was correct and recentering τ restores differentiation. The margin over FedAvg is small enough (+0.0003) that it shouldn't be oversold as a clean win on its own, but it's the first config in either non-IID regime where Fed-SalGate hasn't lost. Config 2 (τ=0.85, β=20.0 — same recentered threshold, sharper steepness) and config 3 (τ=0.80, β=15.0) still running; will determine whether this is a real, reproducible effect of recentering τ or a one-off.
+Final gates for this config: `[1.227, 1.079, 1.449, 0.939, 0.305]` against agreements `[0.879, 0.851, 0.923, 0.825, 0.670]` — a real spread (0.305–1.449) compared to the original run's narrow 0.972–1.024 band, confirming the sigmoid-saturation diagnosis was correct and recentering τ restores differentiation. The margin over FedAvg is small enough (+0.0003) that it shouldn't be oversold as a clean win on its own, but it's the first config in either non-IID regime where Fed-SalGate hasn't lost.
+
+**Config 2 result (τ=0.85, β=20.0 — same recentered threshold, sharper steepness) — a real, clean win**:
+
+| Config | Held-out mIoU | vs FedAvg (0.4145) | vs FedProx (0.4071) |
+|---|---|---|---|
+| Original (τ=0.5, β=10) | 0.4086 | −0.0059 | +0.0015 |
+| τ=0.85, β=10 | 0.4148 | +0.0003 | +0.0077 |
+| **τ=0.85, β=20** | **0.4327** | **+0.0182** | **+0.0256** |
+
+Not a marginal edge — a genuinely meaningful improvement over both baselines. Final gates: `[1.629, 1.025, 1.455, 0.635, 0.256]` against agreements `[0.937, 0.857, 0.908, 0.815, 0.757]`, an even wider, more decisive spread than config 1's. Best single per-round mIoU during training was 0.4574. Notably Road-Flooded IoU jumped to 0.291 (class 3) and Vehicle jumped to 0.246 (class 7, both were weak classes in every prior run) — worth checking the full per-class breakdown once config 3 lands, this may be broader than just the Water-class win seen previously. This is the strongest evidence so far that the original τ=0.5 was a real calibration bug, not a fundamental flaw in the saliency-consensus-gating idea. Config 3 (τ=0.80, β=15.0) still running, will confirm whether this generalizes across nearby (τ,β) settings or is sensitive to the exact values.

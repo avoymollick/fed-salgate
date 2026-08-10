@@ -49,7 +49,16 @@ Each Part 3 model notebook is designed to run standalone and emit `result_<model
 
 So the gating mechanism demonstrably works as designed under real non-IID stress, but that correct behavior doesn't translate into better held-out generalization — if anything Fed-SalGate's gap vs FedAvg is slightly wider under the harsher split. **Nuance worth keeping**: Fed-SalGate wins specifically on Water IoU (0.5237 vs 0.4674/0.4758) in the 5-client run — meaningful for a flood-damage thesis even though overall mIoU is behind. See PROGRESS.md 2026-08-10 for full per-class breakdown and the open question of what this means for the paper's narrative — **not yet resolved, needs a decision before Part 3**.
 
-**In progress (2026-08-10): gate-hyperparameter tuning sweep.** Diagnosed why gates barely moved even in the "activated" 5-client run: real agreement scores (0.769–0.930) are far above `τ=0.5`, so `sigmoid(β·(agreement−τ))` was always saturated near 1.0 regardless of relative differences between clients — a calibration bug, not a mechanism failure. Sweeping `(τ=0.85,β=10)`, `(τ=0.85,β=20)`, `(τ=0.80,β=15)`, training Fed-SalGate only per config (FedAvg=0.4145/FedProx=0.4071 reused from the cached 5-client/α=0.3 run, not retrained). Script: `part2/part2_gate_sweep.py` (pod-only so far, not yet backported to git). Results land in `/workspace/working/fed_salgate_outputs/gate_sweep_results.json`, written incrementally per config. See PROGRESS.md 2026-08-10 for the pod-resume snags hit along the way.
+**In progress (2026-08-10): gate-hyperparameter tuning sweep — early results reverse the narrative.** Diagnosed why gates barely moved even in the "activated" 5-client run: real agreement scores (0.769–0.930) are far above `τ=0.5`, so `sigmoid(β·(agreement−τ))` was always saturated near 1.0 regardless of relative differences between clients — a calibration bug, not a mechanism failure. Sweeping `(τ=0.85,β=10)`, `(τ=0.85,β=20)`, `(τ=0.80,β=15)`, training Fed-SalGate only per config (FedAvg=0.4145/FedProx=0.4071 reused from the cached 5-client/α=0.3 run, not retrained). Script: `part2/part2_gate_sweep.py` (pod-only so far, not yet backported to git).
+
+| Config | Held-out mIoU | vs FedAvg | vs FedProx |
+|---|---|---|---|
+| Original (τ=0.5, β=10) | 0.4086 | −0.0059 | +0.0015 |
+| τ=0.85, β=10 | 0.4148 | +0.0003 | +0.0077 |
+| **τ=0.85, β=20** | **0.4327** | **+0.0182** | **+0.0256** |
+| τ=0.80, β=15 | running | — | — |
+
+Both recentered configs beat FedAvg for the first time in the whole investigation, and τ=0.85/β=20 is a real, non-marginal win — strong evidence the original negative result was driven by `τ` miscalibration, not a flaw in the saliency-consensus-gating idea itself. **This changes the likely paper narrative** — pending config 3 and a full per-class check, "tune the gate threshold to the real agreement range" may become the actual fix rather than a due-diligence dead end. Results land in `/workspace/working/fed_salgate_outputs/gate_sweep_results.json`, written incrementally per config. See PROGRESS.md 2026-08-10 for full details and the pod-resume snags hit along the way.
 
 ## Environment
 
